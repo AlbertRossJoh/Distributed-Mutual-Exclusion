@@ -1,0 +1,16 @@
+version: '3.8'
+
+networks:
+  frontend:
+services:
+  client:
+    build:
+      context: .
+      dockerfile: ./client/Dockerfile
+    volumes:
+      - ./shared_volume:/var/nas
+    networks:
+      frontend:
+    deploy:
+      mode: replicated
+      replicas: 3
