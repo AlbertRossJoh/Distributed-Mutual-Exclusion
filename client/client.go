@@ -1,6 +1,8 @@
-package client
+package main
 
 import (
+	proto "Distributed-Mutual-Exclusion/grpc"
+	"context"
 	"log"
 	"os"
 
@@ -15,10 +17,15 @@ const (
 	RELEASED State = 2
 )
 
+type Client struct {
+	proto.UnimplementedClientServiceServer
+	id string
+}
+
 var (
 	state        State = RELEASED
 	lamport      int64 = 0
-	messageQueue       = queue.NewQueue[int64](1024)
+	messageQueue       = queue.NewQueue[*proto.Request](1024)
 )
 
 func main() {
@@ -39,11 +46,14 @@ func main() {
 	state = HELD
 }
 
-func received(reqLamport int64) {
-	if state == HELD || (state == WANTED && lamport < reqLamport) {
-		messageQueue.Enqueue(1)
+func received(req *proto.Request) *proto.Response {
+	if state == HELD || (state == WANTED && lamport < req.LamportTs) {
+		messageQueue.Enqueue(req)
+		return nil
 	} else {
-		// reply
+		return &proto.Response{
+			Status: 200,
+		}
 	}
 }
 
@@ -54,9 +64,15 @@ func exit() {
 
 func critical_function() {
 	for {
-		for !messageQueue.IsEmpty() {
+		if state == WANTED {
+			for !messageQueue.IsEmpty() {
 
+			}
+			log.Println("Ohh no critical function")
 		}
-		log.Println("Ohh no critical function")
 	}
+}
+
+func (c *Client) MakeRequest(ctx context.Context, in *proto.Request) (*proto.Response, error) {
+	return received(in), nil
 }

@@ -1,5 +1,26 @@
 syntax = "proto3";
 
-package client;
+package proto;
 
 option go_package = "grpc/proto";
+
+enum State {
+    HELD = 0;
+    WANTED = 1;
+    RELEASED = 2;
+}
+
+message Request{
+    int64 lamportTs = 1;
+    State state = 2;
+    string id = 3;
+}
+
+message Response{
+    int64 status = 1;
+}
+
+service ClientService {
+    rpc MakeRequest(Request) returns (Response);
+    rpc Reply(Request) returns (Response);
+}
