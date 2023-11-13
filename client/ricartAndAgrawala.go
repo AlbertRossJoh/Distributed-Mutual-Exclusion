@@ -18,18 +18,25 @@ const N = 3
 // End on
 
 func enter() {
-	go someCritFunc()
+	// go someCritFunc()
 	state = WANTED
 	multicast()
-	for replies < N-1 {
-		log.Println(replies)
+	for {
+		currRep := <-replies
+		if currRep >= N-1 {
+			break
+		}
+		replies <- currRep
 		time.Sleep(time.Duration(5) * time.Second)
 	}
 	state = HELD
+	someCritFunc()
+	replies <- 0
 }
 
 func multicast() {
-	for _, str := range GetFileContents() {
+	res := GetFileContents()
+	for _, str := range res {
 		if str != clientIpAddr {
 			makeCritRequest(str)
 		}
@@ -44,12 +51,15 @@ func multicast() {
 //
 // End on
 func receive(req *proto.Request) {
-	log.Printf("other %d : own %d", req.LamportTs, lamport)
-	if state == HELD || (state == WANTED && lamport < req.LamportTs) {
+	curr := <-lamport
+	if curr < req.LamportTs {
+		curr = req.LamportTs
+	}
+	curr++
+	lamport <- curr
+	if state == HELD || (state == WANTED && curr < req.LamportTs) {
 		replyQueue.Enqueue(req)
-		lamport = req.LamportTs + 1
 	} else {
-		lamport++
 		replyTo(req.Id)
 	}
 }
@@ -59,19 +69,19 @@ func receive(req *proto.Request) {
 // End on
 func exit() {
 	state = RELEASED
-	for _, req := range replyQueue.Items() {
-		replyTo(req.Id)
+	for i := 0; i < replyQueue.Size(); i++ {
+		res, _ := replyQueue.Dequeue()
+		replyTo(res.Id)
 	}
-	replyQueue.Clear()
 }
 
 func someCritFunc() {
-	for {
-		if state == HELD {
-			replies = 0
-			log.Println("Ohh no critical function")
-			time.Sleep(time.Duration(5) * time.Second)
-			exit()
-		}
-	}
+	curr := <-lamport
+	lamport <- curr
+	log.Println("______________________________________")
+	log.Println("Critical function")
+	log.Printf("Current critical timestamp is: %d", curr)
+	log.Println("______________________________________")
+	time.Sleep(time.Duration(5) * time.Second)
+	exit()
 }

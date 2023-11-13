@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -33,28 +32,28 @@ type Client struct {
 const SERVER_PORT = 6969
 
 var (
-	state        State = RELEASED
-	lamport      int64 = 0
-	replyQueue         = queue.NewQueue[*proto.Request](1024)
-	clientIpAddr       = os.Getenv("HOSTNAME")
-	replies            = 0
+	state        State      = RELEASED
+	lamport      chan int64 = make(chan int64, 1)
+	replyQueue              = queue.NewBufQueue[*proto.Request](1024)
+	clientIpAddr            = os.Getenv("HOSTNAME")
+	replies      chan int   = make(chan int, 1)
 )
 
 func main() {
+	go printState()
+	WriteToSharedFile()
+	replies <- 0
+	lamport <- 0
 	client := Client{
 		id:   clientIpAddr,
 		port: SERVER_PORT,
 	}
-
-	WriteToSharedFile()
-
 	go startClient(client)
 
 	for {
-		time.Sleep(time.Duration(rand.Intn(5)) * time.Second)
+		time.Sleep(time.Duration(5) * time.Second)
 		enter()
 	}
-	// state = HELD
 }
 
 func startClient(client Client) {
@@ -74,36 +73,44 @@ func startClient(client Client) {
 	if serveError != nil {
 		log.Fatal("Could not serve listener")
 	}
+	for {
+	}
 }
 
 func (c *Client) MakeRequest(ctx context.Context, in *proto.Request) (*proto.Response, error) {
 	receive(in)
-	log.Printf("Making a request!")
+	// log.Printf("Making a request!")
 	return &proto.Response{
 		Status: 200,
 	}, nil
 }
 
 func (c *Client) Reply(ctx context.Context, in *proto.Request) (*proto.Response, error) {
-	replies++
-	log.Printf("Reply recieved from: %s", in.Id)
+	currRep := <-replies
+	currRep++
+	replies <- currRep
+	// log.Printf("Reply recieved from: %s", in.Id)
 	return &proto.Response{
 		Status: 200,
 	}, nil
 }
 
-func makeCritRequest(str string) (*proto.Response, error) {
+func makeCritRequest(str string) {
+	// log.Printf("Request to %s", str)
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", str, strconv.Itoa(SERVER_PORT)), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Println("Could not connect to client: ", str)
 	}
 	client := proto.NewClientServiceClient(conn)
-	lamport++
-	return client.MakeRequest(context.Background(), &proto.Request{
+	curr := <-lamport
+	curr++
+	lamport <- curr
+	client.MakeRequest(context.Background(), &proto.Request{
 		State:     proto.State_WANTED,
-		LamportTs: lamport,
+		LamportTs: curr,
 		Id:        clientIpAddr,
 	})
+	// log.Println("In make request")
 }
 
 func replyTo(clientIp string) {
@@ -112,10 +119,30 @@ func replyTo(clientIp string) {
 		log.Println("Could not connect to client: ", clientIp)
 	}
 	client := proto.NewClientServiceClient(conn)
-	lamport++
+	curr := <-lamport
+
+	curr++
+	lamport <- curr
 	client.Reply(context.Background(), &proto.Request{
 		State:     proto.State_RELEASED,
-		LamportTs: lamport,
+		LamportTs: curr,
 		Id:        clientIpAddr,
 	})
+}
+
+func printState() {
+	for {
+		time.Sleep(time.Duration(5) * time.Second)
+		switch state {
+		case HELD:
+			log.Printf("Current state is HELD")
+		case RELEASED:
+			log.Printf("Current state is RELEASED")
+		case WANTED:
+			log.Printf("Current state is WANTED")
+		}
+		curr := <-lamport
+		lamport <- curr
+		log.Printf("Current timestamp is: %d", curr)
+	}
 }
