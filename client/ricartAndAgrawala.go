@@ -8,8 +8,6 @@ import (
 
 const N = 3
 
-var curr_state = RELEASED
-
 // INIT
 // STATE = RELEASED
 
@@ -21,18 +19,20 @@ var curr_state = RELEASED
 
 func enter() {
 	go someCritFunc()
-	curr_state = WANTED
-	askForCrit()
+	state = WANTED
+	multicast()
 	for replies < N-1 {
 		log.Println(replies)
 		time.Sleep(time.Duration(5) * time.Second)
 	}
-	curr_state = HELD
+	state = HELD
 }
 
-func askForCrit() {
+func multicast() {
 	for _, str := range GetFileContents() {
-		makeCritRequest(str)
+		if str != clientIpAddr {
+			makeCritRequest(str)
+		}
 	}
 }
 
@@ -44,8 +44,9 @@ func askForCrit() {
 //
 // End on
 func receive(req *proto.Request) {
+	log.Printf("other %d : own %d", req.LamportTs, lamport)
 	if state == HELD || (state == WANTED && lamport < req.LamportTs) {
-		messageQueue.Enqueue(req)
+		replyQueue.Enqueue(req)
 		lamport = req.LamportTs + 1
 	} else {
 		lamport++
@@ -58,18 +59,19 @@ func receive(req *proto.Request) {
 // End on
 func exit() {
 	state = RELEASED
-	for _, req := range messageQueue.Items() {
+	for _, req := range replyQueue.Items() {
 		replyTo(req.Id)
 	}
-	messageQueue.Clear()
+	replyQueue.Clear()
 }
 
 func someCritFunc() {
 	for {
-		if curr_state == HELD {
+		if state == HELD {
 			replies = 0
 			log.Println("Ohh no critical function")
 			time.Sleep(time.Duration(5) * time.Second)
+			exit()
 		}
 	}
 }

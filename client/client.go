@@ -33,17 +33,14 @@ type Client struct {
 const SERVER_PORT = 6969
 
 var (
-	state           State = RELEASED
-	lamport         int64 = 0
-	messageQueue          = queue.NewQueue[*proto.Request](1024)
-	clientIpAddr          = os.Getenv("HOSTNAME")
-	canUse                = false
-	amountOfClients       = 0
-	replies               = 0
+	state        State = RELEASED
+	lamport      int64 = 0
+	replyQueue         = queue.NewQueue[*proto.Request](1024)
+	clientIpAddr       = os.Getenv("HOSTNAME")
+	replies            = 0
 )
 
 func main() {
-
 	client := Client{
 		id:   clientIpAddr,
 		port: SERVER_PORT,
@@ -80,6 +77,8 @@ func startClient(client Client) {
 }
 
 func (c *Client) MakeRequest(ctx context.Context, in *proto.Request) (*proto.Response, error) {
+	receive(in)
+	log.Printf("Making a request!")
 	return &proto.Response{
 		Status: 200,
 	}, nil
@@ -87,34 +86,13 @@ func (c *Client) MakeRequest(ctx context.Context, in *proto.Request) (*proto.Res
 
 func (c *Client) Reply(ctx context.Context, in *proto.Request) (*proto.Response, error) {
 	replies++
+	log.Printf("Reply recieved from: %s", in.Id)
 	return &proto.Response{
 		Status: 200,
 	}, nil
 }
 
-// func askForCrit() {
-// 	replies := 0
-// 	i := 0
-// 	for _, str := range GetFileContents() {
-// 		res, _ := makeCritRequest(str)
-// 		if res.Status == 200 {
-// 			replies++
-// 		}
-// 		i++
-// 	}
-// 	log.Println(replies)
-// 	log.Println(amountOfClients)
-// 	log.Println(i)
-// 	if i-1 > amountOfClients {
-// 		amountOfClients = i - 1
-// 	}
-// 	if replies == amountOfClients {
-// 		canUse = true
-// 	}
-// }
-
 func makeCritRequest(str string) (*proto.Response, error) {
-	log.Println("hello")
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", str, strconv.Itoa(SERVER_PORT)), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Println("Could not connect to client: ", str)
@@ -141,51 +119,3 @@ func replyTo(clientIp string) {
 		Id:        clientIpAddr,
 	})
 }
-
-// func clientRelease() {
-// 	for _, req := range messageQueue.Items() {
-// 		conn, err := grpc.Dial(fmt.Sprintf("%s:%s", req.Id, strconv.Itoa(SERVER_PORT)), grpc.WithTransportCredentials(insecure.NewCredentials()))
-// 		if err != nil {
-// 			log.Println("Could not connect to client: ", req.Id)
-// 		}
-// 		client := proto.NewClientServiceClient(conn)
-// 		_, err = client.Reply(context.Background(), &proto.Request{
-// 			State:     proto.State_RELEASED,
-// 			LamportTs: lamport,
-// 			Id:        clientIpAddr,
-// 		})
-// 	}
-// }
-
-// func received(req *proto.Request) *proto.Response {
-// 	log.Printf("Incoming ts: %d\n", req.LamportTs)
-// 	log.Printf("Own ts: %d\n", lamport)
-// 	if state == HELD || (state == WANTED && lamport < req.LamportTs) {
-// 		messageQueue.Enqueue(req)
-// 		lamport = req.LamportTs + 1
-// 		return &proto.Response{
-// 			Status: 400,
-// 		}
-// 	} else {
-// 		lamport++
-// 		return &proto.Response{
-// 			Status: 200,
-// 		}
-// 	}
-// }
-
-// func exit() {
-// 	state = RELEASED
-// 	// Loop over queue and reply
-// }
-
-// func criticalFunction() {
-// 	for {
-// 		if state == WANTED && canUse {
-// 			log.Println("Ohh no critical function")
-// 			time.Sleep(time.Duration(5) * time.Second)
-// 			canUse = false
-// 			exit()
-// 		}
-// 	}
-// }
