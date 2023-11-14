@@ -10,4 +10,4 @@ COPY . .
 
 EXPOSE 6969
 
-CMD ["go", "run", "./client/client.go"]
+CMD ["go", "run", "./client/"]

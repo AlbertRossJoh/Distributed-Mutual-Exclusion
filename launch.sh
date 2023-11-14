@@ -5,3 +5,4 @@
 rm shared_volume/shared
 
 docker compose up --build
+rm shared_volume/shared

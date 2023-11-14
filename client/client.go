@@ -3,10 +3,16 @@ package main
 import (
 	proto "Distributed-Mutual-Exclusion/grpc"
 	"context"
+	"fmt"
 	"log"
+	"net"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/AlbertRossJoh/itualgs_go/fundamentals/queue"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type State int64
@@ -19,60 +25,124 @@ const (
 
 type Client struct {
 	proto.UnimplementedClientServiceServer
-	id string
+	id   string
+	port int
 }
 
+const SERVER_PORT = 6969
+
 var (
-	state        State = RELEASED
-	lamport      int64 = 0
-	messageQueue       = queue.NewQueue[*proto.Request](1024)
+	state        State      = RELEASED
+	lamport      chan int64 = make(chan int64, 1)
+	replyQueue              = queue.NewBufQueue[*proto.Request](1024)
+	clientIpAddr            = os.Getenv("HOSTNAME")
+	replies      chan int   = make(chan int, 1)
 )
 
 func main() {
-	clientIpAddr := os.Getenv("HOSTNAME")
-	log.Printf("The client's ip address is: ", clientIpAddr)
-
-	f, err := os.OpenFile("/var/nas/shared", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Println("Couldn't open the shared file! On client ", clientIpAddr)
+	go printState()
+	WriteToSharedFile()
+	replies <- 0
+	lamport <- 0
+	client := Client{
+		id:   clientIpAddr,
+		port: SERVER_PORT,
 	}
-	defer f.Close()
-	if _, err := f.WriteString(clientIpAddr + "\n"); err != nil {
-		log.Println("Couldn't write to shared file! On client ", clientIpAddr)
-	}
+	go startClient(client)
 
-	state = WANTED
-	// Do stuff
-	state = HELD
-}
-
-func received(req *proto.Request) *proto.Response {
-	if state == HELD || (state == WANTED && lamport < req.LamportTs) {
-		messageQueue.Enqueue(req)
-		return nil
-	} else {
-		return &proto.Response{
-			Status: 200,
-		}
-	}
-}
-
-func exit() {
-	state = RELEASED
-	// Loop over queue and reply
-}
-
-func critical_function() {
 	for {
-		if state == WANTED {
-			for !messageQueue.IsEmpty() {
+		time.Sleep(time.Duration(5) * time.Second)
+		enter()
+	}
+}
 
-			}
-			log.Println("Ohh no critical function")
-		}
+func startClient(client Client) {
+	grpcServer := grpc.NewServer()
+
+	// Make the server listen at the given port (convert int port to string)
+	listener, err := net.Listen("tcp", ":"+strconv.Itoa(client.port))
+
+	if err != nil {
+		log.Fatalf("Could not create the server %v", err)
+	}
+	log.Printf("Started server at port: %d\n", client.port)
+
+	// Register the grpc server and serve its listener
+	proto.RegisterClientServiceServer(grpcServer, &client)
+	serveError := grpcServer.Serve(listener)
+	if serveError != nil {
+		log.Fatal("Could not serve listener")
+	}
+	for {
 	}
 }
 
 func (c *Client) MakeRequest(ctx context.Context, in *proto.Request) (*proto.Response, error) {
-	return received(in), nil
+	receive(in)
+	// log.Printf("Making a request!")
+	return &proto.Response{
+		Status: 200,
+	}, nil
+}
+
+func (c *Client) Reply(ctx context.Context, in *proto.Request) (*proto.Response, error) {
+	currRep := <-replies
+	currRep++
+	replies <- currRep
+	// log.Printf("Reply recieved from: %s", in.Id)
+	return &proto.Response{
+		Status: 200,
+	}, nil
+}
+
+func makeCritRequest(str string) {
+	// log.Printf("Request to %s", str)
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", str, strconv.Itoa(SERVER_PORT)), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Println("Could not connect to client: ", str)
+	}
+	client := proto.NewClientServiceClient(conn)
+	curr := <-lamport
+	curr++
+	lamport <- curr
+	client.MakeRequest(context.Background(), &proto.Request{
+		State:     proto.State_WANTED,
+		LamportTs: curr,
+		Id:        clientIpAddr,
+	})
+	// log.Println("In make request")
+}
+
+func replyTo(clientIp string) {
+	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", clientIp, strconv.Itoa(SERVER_PORT)), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Println("Could not connect to client: ", clientIp)
+	}
+	client := proto.NewClientServiceClient(conn)
+	curr := <-lamport
+
+	curr++
+	lamport <- curr
+	client.Reply(context.Background(), &proto.Request{
+		State:     proto.State_RELEASED,
+		LamportTs: curr,
+		Id:        clientIpAddr,
+	})
+}
+
+func printState() {
+	for {
+		time.Sleep(time.Duration(5) * time.Second)
+		switch state {
+		case HELD:
+			log.Printf("Current state is HELD")
+		case RELEASED:
+			log.Printf("Current state is RELEASED")
+		case WANTED:
+			log.Printf("Current state is WANTED")
+		}
+		curr := <-lamport
+		lamport <- curr
+		log.Printf("Current timestamp is: %d", curr)
+	}
 }
