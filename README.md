@@ -3,7 +3,7 @@ You need docker to be able to run this program, which you can download [here](ht
 
 When docker has been downloaded you can just run the following command withing the root folder of this project.
 ```sh
-docker compose up --build
+bash launch.sh
 ```
 
-You must use docker to run this, as we've implemented the shared file among clients this way.
+You must have docker installed for this launch command to work, and you might need to run it with `sudo`
