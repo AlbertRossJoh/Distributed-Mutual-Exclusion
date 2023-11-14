@@ -21,15 +21,13 @@ func enter() {
 	state = WANTED
 	multicast()
 	for {
-		currRep := <-replies
-		if currRep >= N-1 {
+		if GetReplies() >= N-1 {
 			break
 		}
-		replies <- currRep
 	}
 	state = HELD
 	someCritFunc()
-	replies <- 0
+	SetReplies(0)
 }
 
 func multicast() {
@@ -49,16 +47,10 @@ func multicast() {
 //
 // End on
 func receive(req *proto.Request) {
-	curr := <-lamport
-	if curr < req.LamportTs {
-		curr = req.LamportTs
-	}
-	curr++
-	lamport <- curr
-	if state == HELD || (state == WANTED && curr < req.LamportTs) {
+	if state == HELD || (state == WANTED && GetLogicalTimeStamp() < req.LamportTs) {
 		replyQueue.Enqueue(req)
 	} else {
-		replyTo(req.Id)
+		replyTo(req.Id, req.LamportTs)
 	}
 }
 
@@ -69,16 +61,14 @@ func exit() {
 	state = RELEASED
 	for i := 0; i < replyQueue.Size(); i++ {
 		res, _ := replyQueue.Dequeue()
-		replyTo(res.Id)
+		replyTo(res.Id, res.LamportTs)
 	}
 }
 
 func someCritFunc() {
-	curr := <-lamport
-	lamport <- curr
 	log.Println("______________________________________")
 	log.Println("Critical function")
-	log.Printf("Current critical timestamp is: %d", curr)
+	log.Printf("Current critical timestamp is: %d", GetLogicalTimeStamp())
 	log.Println("______________________________________")
 	time.Sleep(time.Duration(3) * time.Second)
 	exit()

@@ -32,18 +32,14 @@ type Client struct {
 const SERVER_PORT = 6969
 
 var (
-	state        State      = RELEASED
-	lamport      chan int64 = make(chan int64, 1)
-	replyQueue              = queue.NewBufQueue[*proto.Request](1024)
-	clientIpAddr            = os.Getenv("HOSTNAME")
-	replies      chan int   = make(chan int, 1)
+	state        State = RELEASED
+	replyQueue         = queue.NewBufQueue[*proto.Request](1024)
+	clientIpAddr       = os.Getenv("HOSTNAME")
 )
 
 func main() {
 	// go printState()
 	WriteToSharedFile()
-	replies <- 0
-	lamport <- 0
 	client := Client{
 		id:   clientIpAddr,
 		port: SERVER_PORT,
@@ -83,9 +79,7 @@ func (c *Client) MakeRequest(ctx context.Context, in *proto.Request) (*proto.Res
 }
 
 func (c *Client) Reply(ctx context.Context, in *proto.Request) (*proto.Response, error) {
-	currRep := <-replies
-	currRep++
-	replies <- currRep
+	UpdateReplies()
 	return &proto.Response{
 		Status: 200,
 	}, nil
@@ -97,30 +91,29 @@ func makeCritRequest(str string) {
 		log.Println("Could not connect to client: ", str)
 	}
 	client := proto.NewClientServiceClient(conn)
-	curr := <-lamport
-	curr++
-	lamport <- curr
+
+	UpdateLogicalTimeStamp()
+
 	client.MakeRequest(context.Background(), &proto.Request{
 		State:     proto.State_WANTED,
-		LamportTs: curr,
+		LamportTs: GetLogicalTimeStamp(),
 		Id:        clientIpAddr,
 	})
 }
 
-func replyTo(clientIp string) {
+func replyTo(clientIp string, ts int64) {
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", clientIp, strconv.Itoa(SERVER_PORT)), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Println("Could not connect to client: ", clientIp)
 	}
-	// log.Printf("Replying to: %s", clientIp)
+	log.Printf("Replying to: %s", clientIp)
 	client := proto.NewClientServiceClient(conn)
-	curr := <-lamport
 
-	curr++
-	lamport <- curr
+	ConditionalUpdateLogicalTimeStamp(ts)
+
 	client.Reply(context.Background(), &proto.Request{
 		State:     proto.State_RELEASED,
-		LamportTs: curr,
+		LamportTs: GetLogicalTimeStamp(),
 		Id:        clientIpAddr,
 	})
 }
@@ -136,8 +129,6 @@ func printState() {
 		case WANTED:
 			log.Printf("Current state is WANTED")
 		}
-		curr := <-lamport
-		lamport <- curr
-		log.Printf("Current timestamp is: %d", curr)
+		log.Printf("Current timestamp is: %d", GetLogicalTimeStamp())
 	}
 }
