@@ -18,7 +18,6 @@ const N = 3
 // End on
 
 func enter() {
-	// go someCritFunc()
 	state = WANTED
 	multicast()
 	for {
@@ -27,7 +26,6 @@ func enter() {
 			break
 		}
 		replies <- currRep
-		time.Sleep(time.Duration(5) * time.Second)
 	}
 	state = HELD
 	someCritFunc()
@@ -82,6 +80,6 @@ func someCritFunc() {
 	log.Println("Critical function")
 	log.Printf("Current critical timestamp is: %d", curr)
 	log.Println("______________________________________")
-	time.Sleep(time.Duration(5) * time.Second)
+	time.Sleep(time.Duration(3) * time.Second)
 	exit()
 }

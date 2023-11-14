@@ -40,7 +40,7 @@ var (
 )
 
 func main() {
-	go printState()
+	// go printState()
 	WriteToSharedFile()
 	replies <- 0
 	lamport <- 0
@@ -73,13 +73,10 @@ func startClient(client Client) {
 	if serveError != nil {
 		log.Fatal("Could not serve listener")
 	}
-	for {
-	}
 }
 
 func (c *Client) MakeRequest(ctx context.Context, in *proto.Request) (*proto.Response, error) {
 	receive(in)
-	// log.Printf("Making a request!")
 	return &proto.Response{
 		Status: 200,
 	}, nil
@@ -89,14 +86,12 @@ func (c *Client) Reply(ctx context.Context, in *proto.Request) (*proto.Response,
 	currRep := <-replies
 	currRep++
 	replies <- currRep
-	// log.Printf("Reply recieved from: %s", in.Id)
 	return &proto.Response{
 		Status: 200,
 	}, nil
 }
 
 func makeCritRequest(str string) {
-	// log.Printf("Request to %s", str)
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%s", str, strconv.Itoa(SERVER_PORT)), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Println("Could not connect to client: ", str)
@@ -110,7 +105,6 @@ func makeCritRequest(str string) {
 		LamportTs: curr,
 		Id:        clientIpAddr,
 	})
-	// log.Println("In make request")
 }
 
 func replyTo(clientIp string) {
@@ -118,6 +112,7 @@ func replyTo(clientIp string) {
 	if err != nil {
 		log.Println("Could not connect to client: ", clientIp)
 	}
+	// log.Printf("Replying to: %s", clientIp)
 	client := proto.NewClientServiceClient(conn)
 	curr := <-lamport
 
